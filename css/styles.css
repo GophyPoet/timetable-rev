@@ -275,6 +275,30 @@ body {
     accent-color: #d97706;
 }
 
+.extra-subject-highlighted {
+    background: #fefce8;
+    border-color: #facc15;
+    color: #854d0e;
+}
+
+.extra-subject-highlighted:hover {
+    background: #fef9c3;
+}
+
+.extra-subject-highlighted input[type="checkbox"] {
+    accent-color: #ca8a04;
+}
+
+.highlight-badge {
+    font-size: 0.68rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: #fde047;
+    color: #713f12;
+    font-weight: 600;
+    margin-left: 2px;
+}
+
 .extra-subject-option {
     color: #b45309;
 }

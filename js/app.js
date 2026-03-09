@@ -203,16 +203,21 @@ const App = (() => {
         // Индексы исключённых предметов (canInclude = true)
         const includableSubjectsByClass = {};
         const excludedRecordsByClassSubject = {};
+        const highlightedSubjects = new Set(); // предметы, исключённые жёлтой заливкой
 
         for (const record of state.excludedRecords) {
             if (!record.className || !record.subject || !record.canInclude) continue;
 
-            classSet.add(record.className); // класс может быть только в excluded
+            classSet.add(record.className);
 
             if (!includableSubjectsByClass[record.className]) {
                 includableSubjectsByClass[record.className] = new Set();
             }
             includableSubjectsByClass[record.className].add(record.subject);
+
+            if (record.excludedByHighlight) {
+                highlightedSubjects.add(record.subject);
+            }
 
             const key = `${record.className}|${record.subject}`;
             if (!excludedRecordsByClassSubject[key]) {
@@ -228,6 +233,7 @@ const App = (() => {
             state.includableSubjectsByClass[cls] = Array.from(subjects);
         }
         state.excludedRecordsByClassSubject = excludedRecordsByClassSubject;
+        state.highlightedSubjects = highlightedSubjects;
     }
 
     /**
@@ -284,6 +290,7 @@ const App = (() => {
             UIRenderer.renderExtraSubjectCheckboxes(
                 includable,
                 state.enabledExtraSubjects,
+                state.highlightedSubjects,
                 onExtraSubjectToggle
             );
         } else {
@@ -409,6 +416,7 @@ const App = (() => {
         state.recordsByClassSubject = {};
         state.includableSubjectsByClass = {};
         state.excludedRecordsByClassSubject = {};
+        state.highlightedSubjects = new Set();
         state.selectedClass = null;
         state.selectedSubject = null;
         state.enabledExtraSubjects = new Set();

@@ -62,7 +62,8 @@ const DataFilter = (() => {
                 excluded.push({
                     ...record,
                     exclusionReason: exclusion.reason,
-                    canInclude: exclusion.canInclude
+                    canInclude: exclusion.canInclude,
+                    excludedByHighlight: !!exclusion.isHighlighted
                 });
                 if (exclusion.reason.includes('стоп')) stats.excludedByStopWord++;
                 else if (exclusion.reason.includes('класс')) stats.excludedNoClass++;
@@ -91,9 +92,9 @@ const DataFilter = (() => {
             return { reason: 'Отсутствует предмет', canInclude: false };
         }
 
-        // Жёлтые ячейки — факультативы, нельзя включить
+        // Жёлтые ячейки — факультативы, можно включить через галочку
         if (record.isHighlighted) {
-            return { reason: `Выделено цветом (факультатив): "${record.subject}"`, canInclude: false };
+            return { reason: `Выделено цветом (факультатив): "${record.subject}"`, canInclude: true, isHighlighted: true };
         }
 
         const subject = record.subject.trim();

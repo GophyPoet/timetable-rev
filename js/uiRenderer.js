@@ -131,8 +131,12 @@ const UIRenderer = (() => {
 
     /**
      * Отрисовать галочки доп. предметов для выбранного класса.
+     * @param {string[]} subjects — все доступные для включения предметы
+     * @param {Set} enabledSet — включённые предметы
+     * @param {Set} highlightedSet — предметы, исключённые жёлтой заливкой
+     * @param {Function} onChange — callback(subject, enabled)
      */
-    function renderExtraSubjectCheckboxes(subjects, enabledSet, onChange) {
+    function renderExtraSubjectCheckboxes(subjects, enabledSet, highlightedSet, onChange) {
         const section = document.getElementById('extraSubjectsSection');
         const list = document.getElementById('extraSubjectsList');
 
@@ -146,8 +150,11 @@ const UIRenderer = (() => {
 
         const sorted = subjects.slice().sort((a, b) => a.localeCompare(b, 'ru'));
         for (const subj of sorted) {
+            const isHL = highlightedSet && highlightedSet.has(subj);
             const label = document.createElement('label');
-            label.className = 'extra-subject-label';
+            label.className = isHL
+                ? 'extra-subject-label extra-subject-highlighted'
+                : 'extra-subject-label';
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
@@ -161,6 +168,14 @@ const UIRenderer = (() => {
 
             label.appendChild(checkbox);
             label.appendChild(span);
+
+            if (isHL) {
+                const badge = document.createElement('span');
+                badge.className = 'highlight-badge';
+                badge.textContent = 'заливка';
+                label.appendChild(badge);
+            }
+
             list.appendChild(label);
         }
     }
