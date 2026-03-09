@@ -1,75 +1,37 @@
 /**
  * Модуль парсинга Excel-файлов.
  *
- * Отвечает за:
- * - Чтение файла через SheetJS
- * - Обработку merged cells
- * - Поиск строки заголовков (header detection)
- * - Определение колонок по эвристикам
- * - Извлечение сырых записей расписания
+ * Реальный формат расписания — сводная таблица (pivot):
+ *   Строка 0: Заголовок "РАСПИСАНИЕ УРОКОВ — X КЛАССЫ"
+ *   Строка 1: Учителя / Кл. руководители
+ *   Строка 2: "День | № | Время | Класс1 | Класс2 | ..."
+ *   Строки 3+: Данные с merged cells для дней недели в колонке A
+ *
+ * Каждый лист = одна параллель (1 классы, 2 классы, ..., 10-11 классы).
+ * Классы расположены по колонкам (D, E, F, G...).
  */
 
 const ExcelParser = (() => {
     'use strict';
 
-    // Паттерны для распознавания заголовков колонок
-    const COLUMN_PATTERNS = {
-        className: {
-            keywords: ['класс', 'класcы', 'group', 'класcы', 'кл'],
-            test: (val) => /класс|кл\.?$|group/i.test(val)
-        },
-        subject: {
-            keywords: ['предмет', 'дисциплина', 'урок', 'занятие', 'subject'],
-            test: (val) => /предмет|дисциплин|subject|назван.*урок|назван.*занят/i.test(val)
-        },
-        dayOfWeek: {
-            keywords: ['день', 'день недели', 'day'],
-            test: (val) => /день\s*(недели)?|day/i.test(val)
-        },
-        date: {
-            keywords: ['дата', 'date'],
-            test: (val) => /^дата$|^date$/i.test(val)
-        },
-        lessonNumber: {
-            keywords: ['урок', '№ урока', 'номер урока', 'lesson', '№', 'пара'],
-            test: (val) => /№\s*урок|номер\s*урок|^урок$|^№$|^пара$|lesson\s*#?n/i.test(val)
-        },
-        shift: {
-            keywords: ['смена', 'shift'],
-            test: (val) => /смена|shift/i.test(val)
-        },
-        startTime: {
-            keywords: ['начало', 'время начала', 'start', 'с ', 'нач'],
-            test: (val) => /начал|время\s*начал|^start|^с\s|^нач\.?$/i.test(val)
-        },
-        endTime: {
-            keywords: ['конец', 'окончание', 'время окончания', 'end', 'до', 'оконч'],
-            test: (val) => /конец|окончан|время\s*оконч|^end|^до\s|^оконч\.?$/i.test(val)
-        },
-        time: {
-            keywords: ['время', 'time'],
-            test: (val) => /^время$|^time$/i.test(val)
-        }
-    };
-
-    // Паттерны для определения дней недели в данных
+    // Паттерны для определения дней недели
     const DAY_PATTERNS = {
-        'Пн': /^пн$|^понедельник$/i,
-        'Вт': /^вт$|^вторник$/i,
-        'Ср': /^ср$|^среда$/i,
-        'Чт': /^чт$|^четверг$/i,
-        'Пт': /^пт$|^пятница$/i,
-        'Сб': /^сб$|^суббота$/i,
-        'Вс': /^вс$|^воскресенье$/i
+        'Пн': /^понедельник$/i,
+        'Вт': /^вторник$/i,
+        'Ср': /^среда$/i,
+        'Чт': /^четверг$/i,
+        'Пт': /^пятница$/i,
+        'Сб': /^суббота$/i,
+        'Вс': /^воскресенье$/i
     };
 
-    // Паттерн для класса (например, "6В", "10А", "11б")
-    const CLASS_PATTERN = /^(\d{1,2})\s*([а-яА-ЯёЁa-zA-Z])?$/;
+    // Паттерн для распознавания класса в заголовке: "1 «А»", "5 «Б»", "10«А» СОЦ-ЭК"
+    const CLASS_HEADER_PATTERN = /(\d{1,2})\s*[«"(]?\s*([А-Яа-яЁё])\s*[»")]?\s*(.*)?/;
 
     /**
      * Парсинг Excel-файла.
      * @param {ArrayBuffer} data - Содержимое файла
-     * @returns {object} - { sheets: [], rawRecords: [], diagnostics: {} }
+     * @returns {object} - { rawRecords: [], diagnostics: {} }
      */
     function parseExcelFile(data) {
         const workbook = XLSX.read(data, {
@@ -86,7 +48,8 @@ const ExcelParser = (() => {
             columnsDetected: {},
             warnings: [],
             skippedRows: 0,
-            totalRawRows: 0
+            totalRawRows: 0,
+            classesPerSheet: {}
         };
 
         const allRecords = [];
@@ -115,20 +78,17 @@ const ExcelParser = (() => {
      * Парсинг одного листа.
      */
     function parseSheet(sheet, sheetName, diagnostics) {
-        // Развернуть merged cells
         const merges = sheet['!merges'] || [];
+        const range = XLSX.utils.decode_range(sheet['!ref']);
 
         // Получить все строки как массив массивов
-        const range = XLSX.utils.decode_range(sheet['!ref']);
         const rows = [];
-
         for (let r = range.s.r; r <= range.e.r; r++) {
             const row = [];
             for (let c = range.s.c; c <= range.e.c; c++) {
                 const cellRef = XLSX.utils.encode_cell({ r, c });
                 const cell = sheet[cellRef];
                 let value = null;
-
                 if (cell) {
                     if (cell.t === 'd' && cell.v instanceof Date) {
                         value = cell.v;
@@ -138,13 +98,12 @@ const ExcelParser = (() => {
                         value = cell.v;
                     }
                 }
-
                 row.push(value);
             }
             rows.push(row);
         }
 
-        // Заполнить merged cells
+        // Заполнить merged cells — распространить значение на все ячейки merge
         for (const merge of merges) {
             const val = rows[merge.s.r] ? rows[merge.s.r][merge.s.c] : null;
             if (val !== null && val !== undefined) {
@@ -159,192 +118,133 @@ const ExcelParser = (() => {
             }
         }
 
-        // Поиск строки заголовков
-        const headerInfo = detectHeaders(rows, diagnostics, sheetName);
-
+        // Найти строку заголовков с классами
+        const headerInfo = findClassHeaderRow(rows);
         if (!headerInfo) {
-            // Попытка альтернативного парсинга — структура "день/класс" (сводная таблица)
-            const pivotResult = tryParsePivotSchedule(rows, sheetName, diagnostics);
-            if (pivotResult.length > 0) {
-                return { records: pivotResult };
-            }
-
             diagnostics.warnings.push(
-                `Лист "${sheetName}": не удалось определить заголовки колонок. ` +
-                `Попробуйте файл с более стандартной структурой.`
+                `Лист "${sheetName}": не найдена строка заголовков с классами (ожидалось: "День | № | Время | Класс1 | Класс2 | ...").`
             );
             return { records: [] };
         }
 
-        diagnostics.columnsDetected[sheetName] = headerInfo.detectedColumns;
+        const { headerRow, dayCol, numCol, timeCol, classColumns } = headerInfo;
+        const classNames = classColumns.map(c => c.name);
 
-        // Извлечение записей из строк данных
-        const records = extractRecords(rows, headerInfo, sheetName, diagnostics);
+        diagnostics.columnsDetected[sheetName] = [
+            `День (кол ${dayCol})`,
+            `№ урока (кол ${numCol})`,
+            `Время (кол ${timeCol})`,
+            ...classNames.map((n, i) => `${n} (кол ${classColumns[i].col})`)
+        ];
+        diagnostics.classesPerSheet[sheetName] = classNames;
+
+        // Извлечение записей
+        const records = [];
+
+        for (let r = headerRow + 1; r < rows.length; r++) {
+            const row = rows[r];
+            if (!row) continue;
+
+            // День недели (колонка A, merged)
+            const dayRaw = cellStr(row[dayCol]);
+            const dayOfWeek = detectDayOfWeek(dayRaw);
+
+            // Номер урока
+            const numRaw = cellStr(row[numCol]);
+
+            // Время
+            const timeRaw = cellStr(row[timeCol]);
+
+            // Если нет ни дня, ни номера урока — пропустить строку
+            if (!dayOfWeek && !numRaw) {
+                diagnostics.skippedRows++;
+                continue;
+            }
+
+            // Для каждого класса извлечь предмет
+            for (const classInfo of classColumns) {
+                const subject = cellStr(row[classInfo.col]);
+                if (!subject) continue;
+
+                records.push({
+                    className: classInfo.name,
+                    subject: subject,
+                    dayOfWeek: dayRaw,
+                    date: null,
+                    lessonNumber: numRaw,
+                    shift: null,
+                    startTime: null,
+                    endTime: null,
+                    time: timeRaw,
+                    sourceSheet: sheetName,
+                    rawRow: row.map(c => c !== null && c !== undefined ? String(c) : '').join(' | ')
+                });
+            }
+        }
+
         return { records };
     }
 
     /**
-     * Поиск строки заголовков в первых 20 строках.
+     * Найти строку заголовков с классами.
+     *
+     * Ищем строку где есть "День" (или подобное) + "№" + "Время" +
+     * названия классов вида "1 «А»", "5 «Б»", "10«А» СОЦ-ЭК" и т.д.
      */
-    function detectHeaders(rows, diagnostics, sheetName) {
-        const maxScan = Math.min(rows.length, 20);
-
-        let bestMatch = null;
-        let bestScore = 0;
+    function findClassHeaderRow(rows) {
+        const maxScan = Math.min(rows.length, 10);
 
         for (let i = 0; i < maxScan; i++) {
             const row = rows[i];
-            if (!row || row.every(c => c === null || c === undefined || String(c).trim() === '')) continue;
-
-            const mapping = {};
-            const detected = [];
-            let score = 0;
-
-            for (let j = 0; j < row.length; j++) {
-                const val = row[j];
-                if (val === null || val === undefined) continue;
-                const str = String(val).trim().toLowerCase();
-                if (str === '') continue;
-
-                for (const [field, pattern] of Object.entries(COLUMN_PATTERNS)) {
-                    if (mapping[field] !== undefined) continue;
-                    if (pattern.test(str)) {
-                        mapping[field] = j;
-                        detected.push(field);
-                        score++;
-                        break;
-                    }
-                }
-            }
-
-            // Минимум нужен класс или предмет + хотя бы одно еще поле
-            if (score > bestScore && score >= 2) {
-                bestScore = score;
-                bestMatch = {
-                    headerRow: i,
-                    mapping,
-                    detectedColumns: detected
-                };
-            }
-        }
-
-        return bestMatch;
-    }
-
-    /**
-     * Извлечение записей по маппингу колонок.
-     */
-    function extractRecords(rows, headerInfo, sheetName, diagnostics) {
-        const records = [];
-        const { headerRow, mapping } = headerInfo;
-        let currentDay = null; // Для наследования дня недели сверху
-
-        for (let i = headerRow + 1; i < rows.length; i++) {
-            const row = rows[i];
-            if (!row || row.every(c => c === null || c === undefined || String(c).trim() === '')) {
-                diagnostics.skippedRows++;
-                continue;
-            }
-
-            const record = {
-                className: getCellValue(row, mapping.className),
-                subject: getCellValue(row, mapping.subject),
-                dayOfWeek: getCellValue(row, mapping.dayOfWeek),
-                date: getCellValue(row, mapping.date),
-                lessonNumber: getCellValue(row, mapping.lessonNumber),
-                shift: getCellValue(row, mapping.shift),
-                startTime: getCellValue(row, mapping.startTime),
-                endTime: getCellValue(row, mapping.endTime),
-                time: getCellValue(row, mapping.time),
-                sourceSheet: sheetName,
-                rawRow: row.map(c => c !== null && c !== undefined ? String(c) : '').join(' | ')
-            };
-
-            // Наследование дня недели от предыдущей непустой строки
-            if (record.dayOfWeek) {
-                currentDay = record.dayOfWeek;
-            } else if (currentDay) {
-                record.dayOfWeek = currentDay;
-            }
-
-            // Пропустить полностью пустые записи
-            if (!record.className && !record.subject) {
-                diagnostics.skippedRows++;
-                continue;
-            }
-
-            records.push(record);
-        }
-
-        return records;
-    }
-
-    /**
-     * Попытка распознать сводное расписание формата:
-     * Строки = дни недели, столбцы = номера уроков,
-     * с блоками для каждого класса.
-     */
-    function tryParsePivotSchedule(rows, sheetName, diagnostics) {
-        const records = [];
-        let currentClass = null;
-        let lessonColumns = {};
-
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
             if (!row) continue;
 
-            // Проверяем, не является ли строка заголовком класса
-            const firstCell = row[0] !== null && row[0] !== undefined ? String(row[0]).trim() : '';
+            // Ищем колонки "День", "№", "Время"
+            let dayCol = -1;
+            let numCol = -1;
+            let timeCol = -1;
+            const classColumns = [];
 
-            // Проверяем, содержит ли строка номера уроков (1, 2, 3...)
-            const numericCells = row.filter(c => {
-                const n = parseInt(c, 10);
-                return !isNaN(n) && n >= 1 && n <= 8;
-            });
+            for (let j = 0; j < row.length; j++) {
+                const val = cellStr(row[j]);
+                if (!val) continue;
+                const lower = val.toLowerCase();
 
-            if (numericCells.length >= 3) {
-                // Это может быть строка с номерами уроков
-                lessonColumns = {};
-                for (let j = 0; j < row.length; j++) {
-                    const n = parseInt(row[j], 10);
-                    if (!isNaN(n) && n >= 1 && n <= 8) {
-                        lessonColumns[j] = n;
+                if (lower === 'день' || lower === 'день недели') {
+                    dayCol = j;
+                } else if (lower === '№' || lower === '№ урока' || lower === 'урок') {
+                    numCol = j;
+                } else if (lower === 'время') {
+                    timeCol = j;
+                } else {
+                    // Проверяем, это может быть класс
+                    const classMatch = val.match(CLASS_HEADER_PATTERN);
+                    if (classMatch) {
+                        const grade = classMatch[1];
+                        const letter = classMatch[2];
+                        const suffix = classMatch[3] ? classMatch[3].trim() : '';
+                        let name;
+                        if (suffix) {
+                            name = `${grade}${letter.toLowerCase()} ${suffix}`;
+                        } else {
+                            name = `${grade}${letter.toLowerCase()}`;
+                        }
+                        classColumns.push({ col: j, name, rawHeader: val });
                     }
                 }
-                continue;
             }
 
-            // Проверяем, не это ли класс
-            if (CLASS_PATTERN.test(firstCell) || /^класс\s*/i.test(firstCell)) {
-                currentClass = firstCell.replace(/^класс\s*/i, '').trim();
-                continue;
-            }
+            // Должны найти хотя бы "День" или "№" + минимум один класс
+            if (classColumns.length > 0 && (dayCol >= 0 || numCol >= 0)) {
+                // Если не нашли какую-то из служебных колонок, попробуем угадать
+                if (dayCol < 0) dayCol = 0;
+                if (numCol < 0) numCol = 1;
+                if (timeCol < 0) timeCol = 2;
 
-            // Проверяем, является ли первая ячейка днём недели
-            const detectedDay = detectDayOfWeek(firstCell);
-            if (detectedDay && currentClass && Object.keys(lessonColumns).length > 0) {
-                for (const [colIdx, lessonNum] of Object.entries(lessonColumns)) {
-                    const subject = getCellValue(row, parseInt(colIdx, 10));
-                    if (subject && String(subject).trim() !== '') {
-                        records.push({
-                            className: currentClass,
-                            subject: String(subject).trim(),
-                            dayOfWeek: detectedDay,
-                            date: null,
-                            lessonNumber: String(lessonNum),
-                            shift: null,
-                            startTime: null,
-                            endTime: null,
-                            time: null,
-                            sourceSheet: sheetName,
-                            rawRow: row.map(c => c !== null && c !== undefined ? String(c) : '').join(' | ')
-                        });
-                    }
-                }
+                return { headerRow: i, dayCol, numCol, timeCol, classColumns };
             }
         }
 
-        return records;
+        return null;
     }
 
     /**
@@ -352,7 +252,7 @@ const ExcelParser = (() => {
      */
     function detectDayOfWeek(val) {
         if (!val) return null;
-        const str = String(val).trim();
+        const str = val.trim();
         for (const [abbrev, pattern] of Object.entries(DAY_PATTERNS)) {
             if (pattern.test(str)) return abbrev;
         }
@@ -360,20 +260,17 @@ const ExcelParser = (() => {
     }
 
     /**
-     * Безопасное чтение ячейки.
+     * Получить строковое значение ячейки (или null).
      */
-    function getCellValue(row, colIndex) {
-        if (colIndex === undefined || colIndex === null) return null;
-        if (colIndex >= row.length) return null;
-        const val = row[colIndex];
+    function cellStr(val) {
         if (val === null || val === undefined) return null;
-        return val;
+        const str = String(val).trim();
+        return str || null;
     }
 
     return {
         parseExcelFile,
         detectDayOfWeek,
-        CLASS_PATTERN,
         DAY_PATTERNS
     };
 })();

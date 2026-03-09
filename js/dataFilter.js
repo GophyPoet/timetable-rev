@@ -1,40 +1,48 @@
 /**
  * Модуль фильтрации данных.
  *
- * Отвечает за:
- * - Исключение элективов, ПОУ, ОГЭ, платных занятий
- * - Исключение записей без класса или предмета
- * - Подсчёт исключённых записей с причинами
+ * Исключает из расписания:
+ * - Элективы (ЭЛЕКТИВ ИНФОРМ, ЭЛЕКТИВ ЧЕРЧЕНИЕ)
+ * - ПОУ (ПОУ РУССКИЙ ЯЗЫК, ПОУ МАТЕМАТИКА, ПОУ ИНФОРМАТИКА)
+ * - ОГЭ (ОГЭ (РУССКИЙ), ОГЭ (МАТЕМАТИКА))
+ * - ЕГЭ (ЕГЭ (РУССКИЙ), ЕГЭ (МАТЕМАТИКА))
+ * - Платные (ПЛАТНЫЕ №1, ПЛАТНЫЕ №2)
+ * - Динамическая пауза
+ * - Записи без класса или предмета
  */
 
 const DataFilter = (() => {
     'use strict';
 
-    // Стоп-слова для фильтрации (case-insensitive)
+    // Стоп-слова для фильтрации (case-insensitive, ищем вхождение)
     const STOP_WORDS = [
         'электив',
-        'элективн',
-        'поу',
+        'поу ',       // "ПОУ " с пробелом чтобы не цеплять другие слова
+        'поу\u00a0',  // неразрывный пробел
         'огэ',
+        'егэ',
         'платн',
-        'платные',
+        'динамическая пауза',
         'факультатив',
-        'консультац',
         'внеурочн',
-        'доп.образ',
-        'дополнительное образ'
+        'консультац'
     ];
 
-    // Компилированное регулярное выражение для стоп-слов
-    const STOP_REGEX = new RegExp(
-        STOP_WORDS.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
-        'i'
-    );
+    // Паттерны-префиксы: предмет НАЧИНАЕТСЯ с одного из них
+    const STOP_PREFIX_PATTERNS = [
+        /^поу\s/i,        // "ПОУ РУССКИЙ ЯЗЫК"
+        /^огэ[\s(]/i,     // "ОГЭ (МАТЕМАТИКА)"
+        /^егэ[\s(]/i,     // "ЕГЭ (РУССКИЙ)"
+        /^платн/i,        // "ПЛАТНЫЕ №1"
+        /^электив/i,      // "ЭЛЕКТИВ ИНФОРМ"
+        /^динамическ/i,   // "Динамическая пауза"
+        /^факультатив/i,
+        /^внеурочн/i,
+        /^консультац/i,
+    ];
 
     /**
      * Фильтрация массива нормализованных записей.
-     * @param {Array} records - Нормализованные записи
-     * @returns {{ filtered: Array, excluded: Array, stats: object }}
      */
     function filterRecords(records) {
         const filtered = [];
@@ -52,10 +60,9 @@ const DataFilter = (() => {
             const reason = getExclusionReason(record);
             if (reason) {
                 excluded.push({ ...record, exclusionReason: reason });
-                if (reason.includes('стоп-слов')) stats.excludedByStopWord++;
+                if (reason.includes('стоп')) stats.excludedByStopWord++;
                 else if (reason.includes('класс')) stats.excludedNoClass++;
                 else if (reason.includes('предмет')) stats.excludedNoSubject++;
-                else if (reason.includes('день')) stats.excludedNoDay++;
             } else {
                 filtered.push(record);
                 stats.passed++;
@@ -67,41 +74,30 @@ const DataFilter = (() => {
 
     /**
      * Проверить, нужно ли исключить запись.
-     * @returns {string|null} - Причина исключения или null
      */
     function getExclusionReason(record) {
-        // Проверка на отсутствие класса
         if (!record.className) {
             return 'Отсутствует класс';
         }
 
-        // Проверка на отсутствие предмета
         if (!record.subject) {
             return 'Отсутствует предмет';
         }
 
-        // Проверка стоп-слов в предмете
-        const subjectClean = record.subject.replace(/\s+/g, ' ').trim();
-        if (STOP_REGEX.test(subjectClean)) {
-            return `Содержит стоп-слово в предмете: "${record.subject}"`;
+        const subject = record.subject.trim();
+
+        // Проверка по префиксным паттернам
+        for (const pattern of STOP_PREFIX_PATTERNS) {
+            if (pattern.test(subject)) {
+                return `Исключено по стоп-слову: "${subject}"`;
+            }
         }
 
-        // Проверка стоп-слов в сырых данных строки
-        if (record.rawValue) {
-            const rawClean = record.rawValue.replace(/\s+/g, ' ').trim();
-            // Проверяем только если стоп-слово не в названии класса/предмета
-            // а в служебных колонках
-            if (STOP_REGEX.test(rawClean) && !STOP_REGEX.test(subjectClean)) {
-                // Дополнительная проверка — стоп-слово должно быть отдельным
-                const rawLower = rawClean.toLowerCase();
-                for (const word of STOP_WORDS) {
-                    if (rawLower.includes(word)) {
-                        // Проверим, не является ли это частью предмета
-                        if (!subjectClean.toLowerCase().includes(word)) {
-                            return `Содержит стоп-слово в строке: "${word}"`;
-                        }
-                    }
-                }
+        // Дополнительная проверка: "ОБЗР  ОГЭ (МАТЕМАТИКА)" — содержит ОГЭ внутри
+        const subjectLower = subject.toLowerCase().replace(/\s+/g, ' ');
+        for (const word of STOP_WORDS) {
+            if (subjectLower.includes(word.trim())) {
+                return `Исключено по стоп-слову "${word.trim()}" в: "${subject}"`;
             }
         }
 
@@ -113,7 +109,14 @@ const DataFilter = (() => {
      */
     function containsStopWord(text) {
         if (!text) return false;
-        return STOP_REGEX.test(text.replace(/\s+/g, ' ').trim());
+        const lower = text.toLowerCase().replace(/\s+/g, ' ');
+        for (const word of STOP_WORDS) {
+            if (lower.includes(word.trim())) return true;
+        }
+        for (const pattern of STOP_PREFIX_PATTERNS) {
+            if (pattern.test(text.trim())) return true;
+        }
+        return false;
     }
 
     return {
