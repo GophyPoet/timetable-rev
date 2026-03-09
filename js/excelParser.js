@@ -7,31 +7,46 @@
  *   Строка 2: "День | № | Время | Класс1 | Класс2 | ..."
  *   Строки 3+: Данные с merged cells для дней недели в колонке A
  *
- * Каждый лист = одна параллель (1 классы, 2 классы, ..., 10-11 классы).
- * Классы расположены по колонкам (D, E, F, G...).
+ * Парсер устойчив к:
+ * - Разному регистру заголовков
+ * - Разным обозначениям классов (1«А», 1 "А", 1А, 1 а)
+ * - Сокращённым/полным дням недели (Пн, ПН, Понедельник)
+ * - Разному порядку/именованию служебных колонок
+ * - Дополнительным колонкам и строкам
+ * - Разному количеству классов на листе
  */
 
 const ExcelParser = (() => {
     'use strict';
 
-    // Паттерны для определения дней недели
+    // Паттерны для определения дней недели (полные и сокращённые)
     const DAY_PATTERNS = {
-        'Пн': /^понедельник$/i,
-        'Вт': /^вторник$/i,
-        'Ср': /^среда$/i,
-        'Чт': /^четверг$/i,
-        'Пт': /^пятница$/i,
-        'Сб': /^суббота$/i,
-        'Вс': /^воскресенье$/i
+        'Пн': /^пн\.?$|^понедельник$/i,
+        'Вт': /^вт\.?$|^вторник$/i,
+        'Ср': /^ср\.?$|^среда$/i,
+        'Чт': /^чт\.?$|^четверг$/i,
+        'Пт': /^пт\.?$|^пятница$/i,
+        'Сб': /^сб\.?$|^суббота$/i,
+        'Вс': /^вс\.?$|^воскресенье$/i
     };
 
-    // Паттерн для распознавания класса в заголовке: "1 «А»", "5 «Б»", "10«А» СОЦ-ЭК"
-    const CLASS_HEADER_PATTERN = /(\d{1,2})\s*[«"(]?\s*([А-Яа-яЁё])\s*[»")]?\s*(.*)?/;
+    // Паттерн для распознавания класса в заголовке:
+    //   "1 «А»", "5«Б»", "10 А", "10«А» СОЦ-ЭК", "11 «А» ТЕХНОЛ",
+    //   "1 \"А\"", "1'А'", "1А", "1 а", "7 Г"
+    const CLASS_HEADER_PATTERN = /^(\d{1,2})\s*[«""'(]?\s*([А-Яа-яЁё])\s*[»""')\.]?\s*(.*)?$/;
+
+    // Паттерн для заголовков служебных колонок
+    const SERVICE_HEADER_PATTERNS = {
+        day: /^день(\s+недели)?$|^дни?$/i,
+        num: /^№\s*(урока)?$|^номер(\s+урока)?$|^урок$|^п[\/.]?п\.?$/i,
+        time: /^время(\s+урока)?$|^время\s+начала$/i
+    };
+
+    // Стоп-слова для строки заголовков — если ячейка содержит это, это НЕ класс
+    const HEADER_STOP_WORDS = /^учитель|^кл[\.\s]*руковод|^преподават|^расписание|^предмет|^кабинет|^каб\.?$|^примечан|^смена$/i;
 
     /**
      * Парсинг Excel-файла.
-     * @param {ArrayBuffer} data - Содержимое файла
-     * @returns {object} - { rawRecords: [], diagnostics: {} }
      */
     function parseExcelFile(data) {
         const workbook = XLSX.read(data, {
@@ -122,7 +137,8 @@ const ExcelParser = (() => {
         const headerInfo = findClassHeaderRow(rows);
         if (!headerInfo) {
             diagnostics.warnings.push(
-                `Лист "${sheetName}": не найдена строка заголовков с классами (ожидалось: "День | № | Время | Класс1 | Класс2 | ...").`
+                `Лист "${sheetName}": не найдена строка с классами в заголовке. ` +
+                `Ожидается формат: "День | № | Время | 1«А» | 1«Б» | ..."`
             );
             return { records: [] };
         }
@@ -140,14 +156,22 @@ const ExcelParser = (() => {
 
         // Извлечение записей
         const records = [];
+        let lastDay = null; // для строк где день пустой (не merged, а просто пустая ячейка)
 
         for (let r = headerRow + 1; r < rows.length; r++) {
             const row = rows[r];
             if (!row) continue;
 
-            // День недели (колонка A, merged)
+            // День недели
             const dayRaw = cellStr(row[dayCol]);
             const dayOfWeek = detectDayOfWeek(dayRaw);
+
+            if (dayOfWeek) {
+                lastDay = dayRaw;
+            }
+
+            // Используем текущий день или наследуем от предыдущей строки
+            const effectiveDay = dayRaw || lastDay;
 
             // Номер урока
             const numRaw = cellStr(row[numCol]);
@@ -155,8 +179,15 @@ const ExcelParser = (() => {
             // Время
             const timeRaw = cellStr(row[timeCol]);
 
-            // Если нет ни дня, ни номера урока — пропустить строку
-            if (!dayOfWeek && !numRaw) {
+            // Если нет номера урока — пропустить (это пустая или служебная строка)
+            if (!numRaw) {
+                diagnostics.skippedRows++;
+                continue;
+            }
+
+            // Проверка: номер урока должен содержать хотя бы цифру
+            const numDigits = numRaw.replace(/[^\d]/g, '');
+            if (!numDigits) {
                 diagnostics.skippedRows++;
                 continue;
             }
@@ -169,7 +200,7 @@ const ExcelParser = (() => {
                 records.push({
                     className: classInfo.name,
                     subject: subject,
-                    dayOfWeek: dayRaw,
+                    dayOfWeek: effectiveDay,
                     date: null,
                     lessonNumber: numRaw,
                     shift: null,
@@ -188,17 +219,22 @@ const ExcelParser = (() => {
     /**
      * Найти строку заголовков с классами.
      *
-     * Ищем строку где есть "День" (или подобное) + "№" + "Время" +
-     * названия классов вида "1 «А»", "5 «Б»", "10«А» СОЦ-ЭК" и т.д.
+     * Стратегия:
+     * 1. Сканируем первые 15 строк
+     * 2. Для каждой строки считаем сколько ячеек похожи на класс
+     * 3. Выбираем строку с максимальным количеством классов (минимум 1)
+     * 4. В этой же строке ищем служебные колонки (День, №, Время)
      */
     function findClassHeaderRow(rows) {
-        const maxScan = Math.min(rows.length, 10);
+        const maxScan = Math.min(rows.length, 15);
+
+        let bestResult = null;
+        let bestClassCount = 0;
 
         for (let i = 0; i < maxScan; i++) {
             const row = rows[i];
             if (!row) continue;
 
-            // Ищем колонки "День", "№", "Время"
             let dayCol = -1;
             let numCol = -1;
             let timeCol = -1;
@@ -207,48 +243,78 @@ const ExcelParser = (() => {
             for (let j = 0; j < row.length; j++) {
                 const val = cellStr(row[j]);
                 if (!val) continue;
-                const lower = val.toLowerCase();
+                const trimmed = val.trim();
 
-                if (lower === 'день' || lower === 'день недели') {
+                // Пропускаем стоп-слова (учителя, расписание и т.д.)
+                if (HEADER_STOP_WORDS.test(trimmed)) continue;
+
+                // Проверяем служебные колонки
+                if (SERVICE_HEADER_PATTERNS.day.test(trimmed)) {
                     dayCol = j;
-                } else if (lower === '№' || lower === '№ урока' || lower === 'урок') {
+                    continue;
+                }
+                if (SERVICE_HEADER_PATTERNS.num.test(trimmed)) {
                     numCol = j;
-                } else if (lower === 'время') {
+                    continue;
+                }
+                if (SERVICE_HEADER_PATTERNS.time.test(trimmed)) {
                     timeCol = j;
-                } else {
-                    // Проверяем, это может быть класс
-                    const classMatch = val.match(CLASS_HEADER_PATTERN);
-                    if (classMatch) {
-                        const grade = classMatch[1];
-                        const letter = classMatch[2];
-                        const suffix = classMatch[3] ? classMatch[3].trim() : '';
-                        let name;
-                        if (suffix) {
-                            name = `${grade}${letter.toLowerCase()} ${suffix}`;
-                        } else {
-                            name = `${grade}${letter.toLowerCase()}`;
-                        }
-                        classColumns.push({ col: j, name, rawHeader: val });
+                    continue;
+                }
+
+                // Проверяем, это может быть класс
+                const classMatch = trimmed.match(CLASS_HEADER_PATTERN);
+                if (classMatch) {
+                    const grade = classMatch[1];
+                    const letter = classMatch[2];
+                    const suffix = classMatch[3] ? classMatch[3].trim() : '';
+
+                    // Защита от ложных срабатываний: номер > 12 — вряд ли класс
+                    const gradeNum = parseInt(grade, 10);
+                    if (gradeNum < 1 || gradeNum > 12) continue;
+
+                    let name;
+                    if (suffix) {
+                        name = `${grade}${letter.toLowerCase()} ${suffix}`;
+                    } else {
+                        name = `${grade}${letter.toLowerCase()}`;
                     }
+                    classColumns.push({ col: j, name, rawHeader: trimmed });
                 }
             }
 
-            // Должны найти хотя бы "День" или "№" + минимум один класс
-            if (classColumns.length > 0 && (dayCol >= 0 || numCol >= 0)) {
-                // Если не нашли какую-то из служебных колонок, попробуем угадать
-                if (dayCol < 0) dayCol = 0;
-                if (numCol < 0) numCol = 1;
-                if (timeCol < 0) timeCol = 2;
-
-                return { headerRow: i, dayCol, numCol, timeCol, classColumns };
+            // Строка-кандидат: должна содержать хотя бы 1 класс
+            // и хотя бы одну служебную колонку ИЛИ больше 1 класса
+            const hasService = dayCol >= 0 || numCol >= 0 || timeCol >= 0;
+            if (classColumns.length > bestClassCount && (hasService || classColumns.length >= 2)) {
+                bestClassCount = classColumns.length;
+                bestResult = { headerRow: i, dayCol, numCol, timeCol, classColumns };
             }
         }
 
-        return null;
+        if (!bestResult) return null;
+
+        // Если служебные колонки не найдены — угадываем по позиции
+        // Типичный порядок: День(0) | №(1) | Время(2) | Классы(3+)
+        const firstClassCol = bestResult.classColumns[0].col;
+
+        if (bestResult.dayCol < 0) {
+            // День — обычно первая колонка (до первого класса)
+            bestResult.dayCol = Math.max(0, firstClassCol - 3);
+        }
+        if (bestResult.numCol < 0) {
+            bestResult.numCol = Math.max(0, firstClassCol - 2);
+        }
+        if (bestResult.timeCol < 0) {
+            bestResult.timeCol = Math.max(0, firstClassCol - 1);
+        }
+
+        return bestResult;
     }
 
     /**
      * Определить день недели из строки.
+     * Поддерживает: ПОНЕДЕЛЬНИК, Понедельник, понедельник, Пн, ПН, пн, Пн.
      */
     function detectDayOfWeek(val) {
         if (!val) return null;
