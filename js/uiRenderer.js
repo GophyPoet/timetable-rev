@@ -87,8 +87,10 @@ const UIRenderer = (() => {
 
     /**
      * Заполнить выпадающий список предметов.
+     * @param {string[]} subjects — основные предметы
+     * @param {string[]} [extraSubjects] — доп. предметы (из исключённых, включены галочкой)
      */
-    function populateSubjectSelect(subjects) {
+    function populateSubjectSelect(subjects, extraSubjects) {
         const select = document.getElementById('subjectSelect');
         select.innerHTML = '<option value="">— Выберите предмет —</option>';
 
@@ -98,6 +100,21 @@ const UIRenderer = (() => {
             option.value = subj;
             option.textContent = subj;
             select.appendChild(option);
+        }
+
+        // Добавить доп. предметы в отдельной группе
+        if (extraSubjects && extraSubjects.length > 0) {
+            const group = document.createElement('optgroup');
+            group.label = 'Дополнительные';
+            const sortedExtra = extraSubjects.slice().sort((a, b) => a.localeCompare(b, 'ru'));
+            for (const subj of sortedExtra) {
+                const option = document.createElement('option');
+                option.value = subj;
+                option.textContent = subj;
+                option.className = 'extra-subject-option';
+                group.appendChild(option);
+            }
+            select.appendChild(group);
         }
 
         select.disabled = false;
@@ -113,9 +130,52 @@ const UIRenderer = (() => {
     }
 
     /**
+     * Отрисовать галочки доп. предметов для выбранного класса.
+     */
+    function renderExtraSubjectCheckboxes(subjects, enabledSet, onChange) {
+        const section = document.getElementById('extraSubjectsSection');
+        const list = document.getElementById('extraSubjectsList');
+
+        if (!subjects || subjects.length === 0) {
+            section.hidden = true;
+            return;
+        }
+
+        section.hidden = false;
+        list.innerHTML = '';
+
+        const sorted = subjects.slice().sort((a, b) => a.localeCompare(b, 'ru'));
+        for (const subj of sorted) {
+            const label = document.createElement('label');
+            label.className = 'extra-subject-label';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = enabledSet.has(subj);
+            checkbox.addEventListener('change', () => {
+                onChange(subj, checkbox.checked);
+            });
+
+            const span = document.createElement('span');
+            span.textContent = subj;
+
+            label.appendChild(checkbox);
+            label.appendChild(span);
+            list.appendChild(label);
+        }
+    }
+
+    /**
+     * Скрыть секцию галочек доп. предметов.
+     */
+    function hideExtraSubjectCheckboxes() {
+        document.getElementById('extraSubjectsSection').hidden = true;
+    }
+
+    /**
      * Отрисовать результаты расписания.
      */
-    function renderResults(records, className, subject) {
+    function renderResults(records, className, subject, isExtra) {
         const section = document.getElementById('resultsSection');
         const title = document.getElementById('resultsTitle');
         const count = document.getElementById('resultsCount');
@@ -128,7 +188,8 @@ const UIRenderer = (() => {
 
         section.hidden = false;
         title.textContent = `${className} — ${subject}`;
-        count.textContent = `Найдено занятий: ${records.length}`;
+        const extraNote = isExtra ? ' (дополнительный предмет)' : '';
+        count.textContent = `Найдено занятий: ${records.length}${extraNote}`;
 
         // Сортировка по дню недели, затем по номеру урока
         const sorted = records.slice().sort((a, b) => {
@@ -194,6 +255,9 @@ const UIRenderer = (() => {
         html += `<li>Всего записей до фильтрации: ${filterStats.total}</li>`;
         html += `<li>Прошло фильтрацию: ${filterStats.passed}</li>`;
         html += `<li>Исключено по стоп-словам: ${filterStats.excludedByStopWord}</li>`;
+        if (filterStats.excludedByHighlight) {
+            html += `<li>Выделено цветом (факультативы): ${filterStats.excludedByHighlight}</li>`;
+        }
         html += `<li>Без класса: ${filterStats.excludedNoClass}</li>`;
         html += `<li>Без предмета: ${filterStats.excludedNoSubject}</li>`;
         html += `</ul>`;
@@ -349,6 +413,8 @@ const UIRenderer = (() => {
         populateClassSelect,
         populateSubjectSelect,
         resetSubjectSelect,
+        renderExtraSubjectCheckboxes,
+        hideExtraSubjectCheckboxes,
         renderResults,
         hideResults,
         renderDiagnostics,

@@ -25,10 +25,15 @@ const App = (() => {
         subjectsByClass: {},   // { className: [subjects] }
         recordsByClassSubject: {}, // { 'className|subject': [records] }
 
+        // Индексы исключённых предметов (доступных для включения через галочки)
+        includableSubjectsByClass: {},  // { className: Set of subjects }
+        excludedRecordsByClassSubject: {}, // { 'className|subject': [records] }
+
         // UI state
         selectedClass: null,
         selectedSubject: null,
-        timeMode: 'mixed'
+        timeMode: 'mixed',
+        enabledExtraSubjects: new Set()  // глобальный набор включённых доп. предметов
     };
 
     /**
@@ -194,6 +199,35 @@ const App = (() => {
             state.subjectsByClass[cls] = Array.from(subjects);
         }
         state.recordsByClassSubject = recordsByClassSubject;
+
+        // Индексы исключённых предметов (canInclude = true)
+        const includableSubjectsByClass = {};
+        const excludedRecordsByClassSubject = {};
+
+        for (const record of state.excludedRecords) {
+            if (!record.className || !record.subject || !record.canInclude) continue;
+
+            classSet.add(record.className); // класс может быть только в excluded
+
+            if (!includableSubjectsByClass[record.className]) {
+                includableSubjectsByClass[record.className] = new Set();
+            }
+            includableSubjectsByClass[record.className].add(record.subject);
+
+            const key = `${record.className}|${record.subject}`;
+            if (!excludedRecordsByClassSubject[key]) {
+                excludedRecordsByClassSubject[key] = [];
+            }
+            excludedRecordsByClassSubject[key].push(record);
+        }
+
+        // Обновить список классов (мог расшириться)
+        state.classes = Array.from(classSet);
+        state.includableSubjectsByClass = {};
+        for (const [cls, subjects] of Object.entries(includableSubjectsByClass)) {
+            state.includableSubjectsByClass[cls] = Array.from(subjects);
+        }
+        state.excludedRecordsByClassSubject = excludedRecordsByClassSubject;
     }
 
     /**
@@ -217,6 +251,7 @@ const App = (() => {
         UIRenderer.showFilters();
         UIRenderer.populateClassSelect(state.classes);
         UIRenderer.resetSubjectSelect();
+        UIRenderer.hideExtraSubjectCheckboxes();
         UIRenderer.hideResults();
 
         // Диагностика
@@ -240,14 +275,54 @@ const App = (() => {
         state.selectedClass = e.target.value || null;
         state.selectedSubject = null;
 
-        if (state.selectedClass && state.subjectsByClass[state.selectedClass]) {
-            UIRenderer.populateSubjectSelect(state.subjectsByClass[state.selectedClass]);
+        if (state.selectedClass) {
+            const subjects = state.subjectsByClass[state.selectedClass] || [];
+            const includable = state.includableSubjectsByClass[state.selectedClass] || [];
+            const enabledExtras = includable.filter(s => state.enabledExtraSubjects.has(s));
+
+            UIRenderer.populateSubjectSelect(subjects, enabledExtras);
+            UIRenderer.renderExtraSubjectCheckboxes(
+                includable,
+                state.enabledExtraSubjects,
+                onExtraSubjectToggle
+            );
         } else {
             UIRenderer.resetSubjectSelect();
+            UIRenderer.hideExtraSubjectCheckboxes();
         }
 
         UIRenderer.hideResults();
         updateExportButtons();
+    }
+
+    /**
+     * Обработка переключения галочки доп. предмета.
+     */
+    function onExtraSubjectToggle(subject, enabled) {
+        if (enabled) {
+            state.enabledExtraSubjects.add(subject);
+        } else {
+            state.enabledExtraSubjects.delete(subject);
+        }
+
+        // Обновить выпадающий список предметов
+        if (state.selectedClass) {
+            const subjects = state.subjectsByClass[state.selectedClass] || [];
+            const includable = state.includableSubjectsByClass[state.selectedClass] || [];
+            const enabledExtras = includable.filter(s => state.enabledExtraSubjects.has(s));
+
+            UIRenderer.populateSubjectSelect(subjects, enabledExtras);
+        }
+
+        // Если был выбран предмет, который сняли — сбросить
+        if (state.selectedSubject && !state.enabledExtraSubjects.has(state.selectedSubject)) {
+            const subjects = state.subjectsByClass[state.selectedClass] || [];
+            if (!subjects.includes(state.selectedSubject)) {
+                state.selectedSubject = null;
+                UIRenderer.hideResults();
+                updateExportButtons();
+            }
+        }
     }
 
     /**
@@ -258,8 +333,12 @@ const App = (() => {
 
         if (state.selectedClass && state.selectedSubject) {
             const key = `${state.selectedClass}|${state.selectedSubject}`;
-            const records = state.recordsByClassSubject[key] || [];
-            UIRenderer.renderResults(records, state.selectedClass, state.selectedSubject);
+            // Сначала ищем в основных, потом в исключённых (доп. предметы)
+            const records = state.recordsByClassSubject[key]
+                || state.excludedRecordsByClassSubject[key]
+                || [];
+            const isExtra = !state.recordsByClassSubject[key] && !!state.excludedRecordsByClassSubject[key];
+            UIRenderer.renderResults(records, state.selectedClass, state.selectedSubject, isExtra);
         } else {
             UIRenderer.hideResults();
         }
@@ -289,12 +368,14 @@ const App = (() => {
 
         // Восстановить выбор если возможно
         if (state.selectedClass) {
+            const savedSubject = state.selectedSubject;
             document.getElementById('classSelect').value = state.selectedClass;
             onClassChange({ target: { value: state.selectedClass } });
 
-            if (state.selectedSubject) {
-                document.getElementById('subjectSelect').value = state.selectedSubject;
-                onSubjectChange({ target: { value: state.selectedSubject } });
+            if (savedSubject) {
+                state.selectedSubject = savedSubject;
+                document.getElementById('subjectSelect').value = savedSubject;
+                onSubjectChange({ target: { value: savedSubject } });
             }
         }
     }
@@ -308,6 +389,7 @@ const App = (() => {
 
         document.getElementById('classSelect').value = '';
         UIRenderer.resetSubjectSelect();
+        UIRenderer.hideExtraSubjectCheckboxes();
         UIRenderer.hideResults();
         updateExportButtons();
     }
@@ -325,8 +407,11 @@ const App = (() => {
         state.classes = [];
         state.subjectsByClass = {};
         state.recordsByClassSubject = {};
+        state.includableSubjectsByClass = {};
+        state.excludedRecordsByClassSubject = {};
         state.selectedClass = null;
         state.selectedSubject = null;
+        state.enabledExtraSubjects = new Set();
 
         document.getElementById('fileInput').value = '';
         document.getElementById('fileInfo').hidden = true;

@@ -60,6 +60,7 @@ const DataNormalizer = (() => {
             startTime: null,
             endTime: null,
             timeSource: 'не определено',
+            isHighlighted: !!record.isHighlighted,
             sourceSheet: record.sourceSheet || '',
             rawValue: record.rawRow || ''
         };

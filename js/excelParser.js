@@ -52,7 +52,7 @@ const ExcelParser = (() => {
         const workbook = XLSX.read(data, {
             type: 'array',
             cellDates: true,
-            cellStyles: false,
+            cellStyles: true,
             cellNF: true
         });
 
@@ -96,8 +96,9 @@ const ExcelParser = (() => {
         const merges = sheet['!merges'] || [];
         const range = XLSX.utils.decode_range(sheet['!ref']);
 
-        // Получить все строки как массив массивов
+        // Получить все строки как массив массивов + карта подсветки
         const rows = [];
+        const highlighted = {}; // 'r,c' → true если ячейка жёлтая
         for (let r = range.s.r; r <= range.e.r; r++) {
             const row = [];
             for (let c = range.s.c; c <= range.e.c; c++) {
@@ -111,6 +112,9 @@ const ExcelParser = (() => {
                         value = cell.w;
                     } else if (cell.v !== undefined) {
                         value = cell.v;
+                    }
+                    if (isYellowCell(cell)) {
+                        highlighted[`${r},${c}`] = true;
                     }
                 }
                 row.push(value);
@@ -207,6 +211,7 @@ const ExcelParser = (() => {
                     startTime: null,
                     endTime: null,
                     time: timeRaw,
+                    isHighlighted: !!highlighted[`${r},${classInfo.col}`],
                     sourceSheet: sheetName,
                     rawRow: row.map(c => c !== null && c !== undefined ? String(c) : '').join(' | ')
                 });
@@ -323,6 +328,27 @@ const ExcelParser = (() => {
             if (pattern.test(str)) return abbrev;
         }
         return null;
+    }
+
+    /**
+     * Определить, является ли ячейка жёлтой (выделенной цветом).
+     * Проверяет фоновый цвет заливки: R >= 200, G >= 200, B <= 100.
+     */
+    function isYellowCell(cell) {
+        if (!cell || !cell.s) return false;
+        const fill = cell.s.fill || cell.s.patternFill;
+        if (!fill) return false;
+        const fgColor = fill.fgColor;
+        if (!fgColor) return false;
+        let rgb = fgColor.rgb;
+        if (!rgb) return false;
+        // Убрать альфа-префикс: "FFFFFF00" → "FFFF00"
+        if (rgb.length === 8) rgb = rgb.substring(2);
+        if (rgb.length !== 6) return false;
+        const red = parseInt(rgb.substring(0, 2), 16);
+        const green = parseInt(rgb.substring(2, 4), 16);
+        const blue = parseInt(rgb.substring(4, 6), 16);
+        return red >= 200 && green >= 200 && blue <= 100;
     }
 
     /**

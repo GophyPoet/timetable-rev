@@ -57,12 +57,17 @@ const DataFilter = (() => {
         };
 
         for (const record of records) {
-            const reason = getExclusionReason(record);
-            if (reason) {
-                excluded.push({ ...record, exclusionReason: reason });
-                if (reason.includes('стоп')) stats.excludedByStopWord++;
-                else if (reason.includes('класс')) stats.excludedNoClass++;
-                else if (reason.includes('предмет')) stats.excludedNoSubject++;
+            const exclusion = getExclusionReason(record);
+            if (exclusion) {
+                excluded.push({
+                    ...record,
+                    exclusionReason: exclusion.reason,
+                    canInclude: exclusion.canInclude
+                });
+                if (exclusion.reason.includes('стоп')) stats.excludedByStopWord++;
+                else if (exclusion.reason.includes('класс')) stats.excludedNoClass++;
+                else if (exclusion.reason.includes('предмет')) stats.excludedNoSubject++;
+                else if (exclusion.reason.includes('цветом')) stats.excludedByHighlight = (stats.excludedByHighlight || 0) + 1;
             } else {
                 filtered.push(record);
                 stats.passed++;
@@ -74,22 +79,29 @@ const DataFilter = (() => {
 
     /**
      * Проверить, нужно ли исключить запись.
+     * Возвращает null (не исключать) или объект { reason, canInclude }
+     * canInclude = true если запись можно вернуть через галочку.
      */
     function getExclusionReason(record) {
         if (!record.className) {
-            return 'Отсутствует класс';
+            return { reason: 'Отсутствует класс', canInclude: false };
         }
 
         if (!record.subject) {
-            return 'Отсутствует предмет';
+            return { reason: 'Отсутствует предмет', canInclude: false };
+        }
+
+        // Жёлтые ячейки — факультативы, нельзя включить
+        if (record.isHighlighted) {
+            return { reason: `Выделено цветом (факультатив): "${record.subject}"`, canInclude: false };
         }
 
         const subject = record.subject.trim();
 
-        // Проверка по префиксным паттернам
+        // Проверка по префиксным паттернам — можно вернуть через галочку
         for (const pattern of STOP_PREFIX_PATTERNS) {
             if (pattern.test(subject)) {
-                return `Исключено по стоп-слову: "${subject}"`;
+                return { reason: `Исключено по стоп-слову: "${subject}"`, canInclude: true };
             }
         }
 
@@ -97,7 +109,7 @@ const DataFilter = (() => {
         const subjectLower = subject.toLowerCase().replace(/\s+/g, ' ');
         for (const word of STOP_WORDS) {
             if (subjectLower.includes(word.trim())) {
-                return `Исключено по стоп-слову "${word.trim()}" в: "${subject}"`;
+                return { reason: `Исключено по стоп-слову "${word.trim()}" в: "${subject}"`, canInclude: true };
             }
         }
 
