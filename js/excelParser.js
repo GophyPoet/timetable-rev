@@ -69,14 +69,26 @@ const ExcelParser = (() => {
 
         const allRecords = [];
 
+        // Ищем лист "предметы" — в нём могут быть предметы с цветной заливкой
+        const highlightedFromSubjectsSheet = parseSubjectsSheet(workbook);
+        if (highlightedFromSubjectsSheet.size > 0) {
+            diagnostics.warnings.push(
+                `Лист «предметы»: найдено ${highlightedFromSubjectsSheet.size} предмет(ов) с заливкой: ` +
+                Array.from(highlightedFromSubjectsSheet).join(', ')
+            );
+        }
+
         for (const sheetName of workbook.SheetNames) {
+            // Пропускаем служебный лист "предметы"
+            if (sheetName.toLowerCase().replace(/\s/g, '') === 'предметы') continue;
+
             const sheet = workbook.Sheets[sheetName];
             if (!sheet || !sheet['!ref']) {
                 diagnostics.warnings.push(`Лист "${sheetName}" пуст или не имеет данных.`);
                 continue;
             }
 
-            const result = parseSheet(sheet, sheetName, diagnostics);
+            const result = parseSheet(sheet, sheetName, diagnostics, highlightedFromSubjectsSheet);
             allRecords.push(...result.records);
             diagnostics.sheetsProcessed++;
         }
@@ -90,9 +102,40 @@ const ExcelParser = (() => {
     }
 
     /**
-     * Парсинг одного листа.
+     * Парсинг листа «предметы» — ищет ячейки с цветной заливкой.
+     * Возвращает Set с названиями предметов, у которых есть заливка.
      */
-    function parseSheet(sheet, sheetName, diagnostics) {
+    function parseSubjectsSheet(workbook) {
+        const result = new Set();
+        const sheetIdx = workbook.SheetNames.findIndex(
+            n => n.toLowerCase().replace(/\s/g, '') === 'предметы'
+        );
+        if (sheetIdx < 0) return result;
+
+        const sheet = workbook.Sheets[workbook.SheetNames[sheetIdx]];
+        if (!sheet || !sheet['!ref']) return result;
+
+        const range = XLSX.utils.decode_range(sheet['!ref']);
+        for (let r = range.s.r; r <= range.e.r; r++) {
+            for (let c = range.s.c; c <= range.e.c; c++) {
+                const ref = XLSX.utils.encode_cell({ r, c });
+                const cell = sheet[ref];
+                if (!cell) continue;
+                const val = cell.w || (cell.v !== undefined ? String(cell.v) : '');
+                if (!val || !val.trim()) continue;
+                if (hasCellBackground(cell)) {
+                    result.add(val.trim());
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Парсинг одного листа.
+     * @param {Set} highlightedSubjects — предметы с заливкой из листа «предметы»
+     */
+    function parseSheet(sheet, sheetName, diagnostics, highlightedSubjects) {
         const merges = sheet['!merges'] || [];
         const range = XLSX.utils.decode_range(sheet['!ref']);
 
@@ -211,7 +254,8 @@ const ExcelParser = (() => {
                     startTime: null,
                     endTime: null,
                     time: timeRaw,
-                    isHighlighted: !!highlighted[`${r},${classInfo.col}`],
+                    isHighlighted: !!highlighted[`${r},${classInfo.col}`] ||
+                        (highlightedSubjects && highlightedSubjects.has(subject)),
                     sourceSheet: sheetName,
                     rawRow: row.map(c => c !== null && c !== undefined ? String(c) : '').join(' | ')
                 });
@@ -336,16 +380,30 @@ const ExcelParser = (() => {
      */
     /**
      * Проверяет, есть ли у ячейки фоновая заливка любого цвета (не белая / не прозрачная).
+     * Поддерживает два формата стилей XLSX:
+     *   - вложенный: cell.s.fill.fgColor  (или cell.s.patternFill.fgColor)
+     *   - плоский:   cell.s.fgColor  +  cell.s.patternType
      */
     function hasCellBackground(cell) {
         if (!cell || !cell.s) return false;
-        const fill = cell.s.fill || cell.s.patternFill;
-        if (!fill) return false;
+        const s = cell.s;
+
+        // Определяем patternType и fgColor из обоих форматов
+        let patternType, fgColor;
+
+        const fill = s.fill || s.patternFill;
+        if (fill && fill.fgColor) {
+            // Вложенный формат
+            patternType = fill.patternType;
+            fgColor = fill.fgColor;
+        } else if (s.fgColor) {
+            // Плоский формат (SheetJS иногда кладёт прямо на s)
+            patternType = s.patternType;
+            fgColor = s.fgColor;
+        }
 
         // patternType "none" означает отсутствие заливки
-        if (fill.patternType === 'none') return false;
-
-        const fgColor = fill.fgColor;
+        if (patternType === 'none') return false;
         if (!fgColor) return false;
 
         // Если тема задана без rgb — считаем что заливка есть
