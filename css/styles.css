@@ -1,0 +1,480 @@
+/* ==========================================================================
+   Анализатор расписания уроков — Стили
+   ========================================================================== */
+
+/* --- Reset & Base --- */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    line-height: 1.5;
+    min-height: 100vh;
+}
+
+/* --- App Container --- */
+.app-container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* --- Header --- */
+.app-header {
+    text-align: center;
+    padding: 24px 0 16px;
+}
+
+.app-header h1 {
+    font-size: 1.6rem;
+    color: #16213e;
+    margin-bottom: 4px;
+}
+
+.app-subtitle {
+    color: #6c757d;
+    font-size: 0.95rem;
+}
+
+/* --- Sections --- */
+.section {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.section h2 {
+    font-size: 1.1rem;
+    color: #16213e;
+    margin-bottom: 14px;
+    border-bottom: 2px solid #e8ecf1;
+    padding-bottom: 8px;
+}
+
+/* --- Upload Area --- */
+.upload-area {
+    border: 2px dashed #c0c8d4;
+    border-radius: 10px;
+    padding: 36px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.upload-area:hover,
+.upload-area.drag-over {
+    border-color: #4361ee;
+    background: #f0f4ff;
+}
+
+.upload-icon {
+    font-size: 2.4rem;
+    margin-bottom: 8px;
+}
+
+.upload-area p {
+    color: #555;
+    margin-bottom: 6px;
+}
+
+.upload-hint {
+    font-size: 0.82rem;
+    color: #999;
+}
+
+.file-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: #eef6ee;
+    border-radius: 6px;
+}
+
+.file-name {
+    font-weight: 600;
+    color: #2d6a2d;
+}
+
+/* --- Buttons --- */
+.btn {
+    display: inline-block;
+    padding: 8px 18px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: #4361ee;
+    color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #3a56d4;
+}
+
+.btn-secondary {
+    background: #e8ecf1;
+    color: #333;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: #dce1e8;
+}
+
+.btn-danger {
+    background: #f8d7da;
+    color: #842029;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: #f1c1c6;
+}
+
+.btn-small {
+    padding: 4px 12px;
+    font-size: 0.82rem;
+}
+
+/* --- Status Grid --- */
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+}
+
+.status-card {
+    background: #f4f7fb;
+    border-radius: 8px;
+    padding: 14px;
+    text-align: center;
+}
+
+.status-card-warning {
+    background: #fff8e1;
+}
+
+.status-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #4361ee;
+}
+
+.status-card-warning .status-value {
+    color: #e65100;
+}
+
+.status-label {
+    font-size: 0.82rem;
+    color: #6c757d;
+    margin-top: 2px;
+}
+
+/* --- Filters --- */
+.filters-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-end;
+}
+
+.filter-group {
+    flex: 1;
+    min-width: 180px;
+}
+
+.filter-group label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #444;
+    margin-bottom: 4px;
+}
+
+.filter-group select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #c0c8d4;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    background: #fff;
+    color: #333;
+    appearance: auto;
+}
+
+.filter-group select:disabled {
+    background: #f0f2f5;
+    color: #999;
+}
+
+.filter-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-width: auto;
+    flex: 0 0 auto;
+}
+
+/* --- Time Mode Toggle --- */
+.time-mode-toggle {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #e8ecf1;
+}
+
+.time-mode-toggle > label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #444;
+    margin-bottom: 6px;
+    display: block;
+}
+
+.radio-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.88rem;
+    color: #555;
+    cursor: pointer;
+}
+
+.radio-label input[type="radio"] {
+    accent-color: #4361ee;
+}
+
+/* --- Results --- */
+.results-count {
+    color: #6c757d;
+    font-size: 0.88rem;
+    margin-bottom: 10px;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+}
+
+.results-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.results-table th {
+    background: #f4f7fb;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #16213e;
+    border-bottom: 2px solid #e0e4ea;
+    white-space: nowrap;
+}
+
+.results-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #eef0f4;
+    vertical-align: middle;
+}
+
+.results-table tbody tr:hover {
+    background: #f8f9fc;
+}
+
+/* --- Time Source Badges --- */
+.time-source {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+
+.source-grid {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
+.source-excel {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.source-unknown {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+/* --- Grid Section (Time tables) --- */
+.grid-section details summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #16213e;
+    padding: 4px 0;
+}
+
+.grids-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 14px;
+}
+
+.grid-block h3 {
+    font-size: 0.95rem;
+    color: #444;
+    margin-bottom: 8px;
+}
+
+.grid-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.grid-table th {
+    background: #f4f7fb;
+    padding: 6px 10px;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid #e0e4ea;
+}
+
+.grid-table td {
+    padding: 5px 10px;
+    border-bottom: 1px solid #eef0f4;
+}
+
+/* --- Diagnostics --- */
+.diagnostics-section details summary,
+.debug-section details summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #16213e;
+    padding: 4px 0;
+}
+
+.diagnostics-block h4 {
+    font-size: 0.92rem;
+    color: #333;
+    margin: 14px 0 6px;
+}
+
+.diagnostics-block h4:first-child {
+    margin-top: 10px;
+}
+
+.diagnostics-block p,
+.diagnostics-block li {
+    font-size: 0.88rem;
+    color: #555;
+}
+
+.diagnostics-block ul {
+    margin-left: 20px;
+}
+
+.diagnostics-warnings .warning-item {
+    color: #c0392b;
+}
+
+.excluded-examples {
+    margin-top: 6px;
+}
+
+.excluded-item {
+    padding: 6px 10px;
+    margin-bottom: 4px;
+    background: #fff8f0;
+    border-left: 3px solid #e65100;
+    border-radius: 0 4px 4px 0;
+    font-size: 0.84rem;
+}
+
+.excluded-reason {
+    display: block;
+    font-weight: 600;
+    color: #c0392b;
+    font-size: 0.82rem;
+}
+
+.excluded-detail {
+    color: #777;
+    font-size: 0.8rem;
+}
+
+/* --- Debug --- */
+.debug-records {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.debug-record {
+    background: #f8f9fa;
+    border: 1px solid #e8ecf1;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* --- Footer --- */
+.app-footer {
+    text-align: center;
+    padding: 16px 0;
+    color: #999;
+    font-size: 0.82rem;
+}
+
+/* --- Responsive --- */
+@media (max-width: 640px) {
+    .app-container {
+        padding: 12px;
+    }
+
+    .section {
+        padding: 14px 16px;
+    }
+
+    .grids-container {
+        grid-template-columns: 1fr;
+    }
+
+    .filters-row {
+        flex-direction: column;
+    }
+
+    .filter-group {
+        min-width: 100%;
+    }
+
+    .status-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}

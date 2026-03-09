@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анализатор расписания уроков</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1>📋 Анализатор расписания уроков</h1>
+            <p class="app-subtitle">Загрузите Excel-файл с расписанием для анализа</p>
+        </header>
+
+        <main class="app-main">
+            <!-- File Upload Section -->
+            <section class="section upload-section">
+                <h2>Загрузка файла</h2>
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <p>Перетащите Excel-файл сюда или нажмите для выбора</p>
+                    <p class="upload-hint">Поддерживаются форматы .xlsx и .xls</p>
+                    <input type="file" id="fileInput" accept=".xlsx,.xls" hidden>
+                    <button class="btn btn-primary" id="selectFileBtn">Выбрать файл</button>
+                </div>
+                <div class="file-info" id="fileInfo" hidden>
+                    <span class="file-name" id="fileName"></span>
+                    <button class="btn btn-small btn-danger" id="clearFileBtn">Очистить</button>
+                </div>
+            </section>
+
+            <!-- Status Section -->
+            <section class="section status-section" id="statusSection" hidden>
+                <h2>Статус анализа</h2>
+                <div class="status-grid">
+                    <div class="status-card">
+                        <div class="status-value" id="statusRecords">0</div>
+                        <div class="status-label">Записей найдено</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="status-value" id="statusClasses">0</div>
+                        <div class="status-label">Классов</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="status-value" id="statusSubjects">0</div>
+                        <div class="status-label">Предметов</div>
+                    </div>
+                    <div class="status-card status-card-warning">
+                        <div class="status-value" id="statusExcluded">0</div>
+                        <div class="status-label">Исключено записей</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="status-value" id="statusSheets">0</div>
+                        <div class="status-label">Листов обработано</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Filters Section -->
+            <section class="section filters-section" id="filtersSection" hidden>
+                <h2>Фильтры</h2>
+                <div class="filters-row">
+                    <div class="filter-group">
+                        <label for="classSelect">Класс</label>
+                        <select id="classSelect" disabled>
+                            <option value="">— Выберите класс —</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="subjectSelect">Предмет</label>
+                        <select id="subjectSelect" disabled>
+                            <option value="">— Сначала выберите класс —</option>
+                        </select>
+                    </div>
+                    <div class="filter-group filter-actions">
+                        <button class="btn btn-secondary" id="resetBtn" disabled>Сбросить выбор</button>
+                        <button class="btn btn-secondary" id="exportCsvBtn" disabled>Скачать CSV</button>
+                        <button class="btn btn-secondary" id="exportJsonBtn" disabled>Скачать JSON</button>
+                    </div>
+                </div>
+
+                <!-- Time mode toggle -->
+                <div class="time-mode-toggle">
+                    <label>Режим определения времени:</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="timeMode" value="mixed" checked>
+                            <span>Смешанный (Excel + сетка)</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="timeMode" value="excel">
+                            <span>Только из Excel</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="timeMode" value="grid">
+                            <span>Только школьная сетка</span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section class="section results-section" id="resultsSection" hidden>
+                <h2>Расписание: <span id="resultsTitle"></span></h2>
+                <p class="results-count" id="resultsCount"></p>
+                <div class="table-wrapper">
+                    <table class="results-table" id="resultsTable">
+                        <thead>
+                            <tr>
+                                <th>День занятия</th>
+                                <th>Урок</th>
+                                <th>Время</th>
+                                <th>Смена</th>
+                                <th>Источник времени</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Lesson Time Grid Section -->
+            <section class="section grid-section">
+                <details id="gridDetails">
+                    <summary>Школьная сетка времени уроков</summary>
+                    <div class="grids-container">
+                        <div class="grid-block">
+                            <h3>Понедельник</h3>
+                            <table class="grid-table" id="mondayGrid"></table>
+                        </div>
+                        <div class="grid-block">
+                            <h3>Вторник — Суббота</h3>
+                            <table class="grid-table" id="tueSatGrid"></table>
+                        </div>
+                    </div>
+                </details>
+            </section>
+
+            <!-- Diagnostics Section -->
+            <section class="section diagnostics-section" id="diagnosticsSection" hidden>
+                <details>
+                    <summary>Диагностика</summary>
+                    <div id="diagnosticsContent"></div>
+                </details>
+            </section>
+
+            <!-- Debug Section -->
+            <section class="section debug-section" id="debugSection" hidden>
+                <details>
+                    <summary>Отладочная информация (примеры записей)</summary>
+                    <div id="debugContent"></div>
+                </details>
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            <p>Анализатор расписания уроков v1.0</p>
+        </footer>
+    </div>
+
+    <!-- SheetJS library -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+    <!-- Application modules -->
+    <script src="js/lessonTimeGrid.js"></script>
+    <script src="js/excelParser.js"></script>
+    <script src="js/dataNormalizer.js"></script>
+    <script src="js/dataFilter.js"></script>
+    <script src="js/uiRenderer.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
