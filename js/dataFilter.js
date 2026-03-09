@@ -92,9 +92,9 @@ const DataFilter = (() => {
             return { reason: 'Отсутствует предмет', canInclude: false };
         }
 
-        // Жёлтые ячейки — факультативы, можно включить через галочку
+        // Ячейки с цветной заливкой — можно включить через галочку
         if (record.isHighlighted) {
-            return { reason: `Выделено цветом (факультатив): "${record.subject}"`, canInclude: true, isHighlighted: true };
+            return { reason: `Выделено цветом: "${record.subject}"`, canInclude: true, isHighlighted: true };
         }
 
         const subject = record.subject.trim();

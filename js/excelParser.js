@@ -113,7 +113,7 @@ const ExcelParser = (() => {
                     } else if (cell.v !== undefined) {
                         value = cell.v;
                     }
-                    if (isYellowCell(cell)) {
+                    if (hasCellBackground(cell)) {
                         highlighted[`${r},${c}`] = true;
                     }
                 }
@@ -334,21 +334,41 @@ const ExcelParser = (() => {
      * Определить, является ли ячейка жёлтой (выделенной цветом).
      * Проверяет фоновый цвет заливки: R >= 200, G >= 200, B <= 100.
      */
-    function isYellowCell(cell) {
+    /**
+     * Проверяет, есть ли у ячейки фоновая заливка любого цвета (не белая / не прозрачная).
+     */
+    function hasCellBackground(cell) {
         if (!cell || !cell.s) return false;
         const fill = cell.s.fill || cell.s.patternFill;
         if (!fill) return false;
+
+        // patternType "none" означает отсутствие заливки
+        if (fill.patternType === 'none') return false;
+
         const fgColor = fill.fgColor;
         if (!fgColor) return false;
+
+        // Если тема задана без rgb — считаем что заливка есть
+        if (fgColor.theme !== undefined && !fgColor.rgb) return true;
+
         let rgb = fgColor.rgb;
         if (!rgb) return false;
+
         // Убрать альфа-префикс: "FFFFFF00" → "FFFF00"
         if (rgb.length === 8) rgb = rgb.substring(2);
         if (rgb.length !== 6) return false;
+
         const red = parseInt(rgb.substring(0, 2), 16);
         const green = parseInt(rgb.substring(2, 4), 16);
         const blue = parseInt(rgb.substring(4, 6), 16);
-        return red >= 200 && green >= 200 && blue <= 100;
+
+        // Белый или почти белый — не считаем заливкой
+        if (red >= 250 && green >= 250 && blue >= 250) return false;
+
+        // Чёрный (000000) тоже пропускаем — это часто дефолт шрифта, не заливка
+        if (red === 0 && green === 0 && blue === 0) return false;
+
+        return true;
     }
 
     /**

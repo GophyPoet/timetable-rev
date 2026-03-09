@@ -271,7 +271,7 @@ const UIRenderer = (() => {
         html += `<li>Прошло фильтрацию: ${filterStats.passed}</li>`;
         html += `<li>Исключено по стоп-словам: ${filterStats.excludedByStopWord}</li>`;
         if (filterStats.excludedByHighlight) {
-            html += `<li>Выделено цветом (факультативы): ${filterStats.excludedByHighlight}</li>`;
+            html += `<li>Выделено цветом (заливка фона): ${filterStats.excludedByHighlight}</li>`;
         }
         html += `<li>Без класса: ${filterStats.excludedNoClass}</li>`;
         html += `<li>Без предмета: ${filterStats.excludedNoSubject}</li>`;
